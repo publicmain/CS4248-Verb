@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 from torch.nn import BCEWithLogitsLoss
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from transformers import AdamW
+from torch.optim import AdamW
 from emote_config import Emote_Config
 
 from unsupervised import UnsupervisedEval
@@ -142,7 +142,6 @@ if __name__ == '__main__':
     
     model.resize_token_embeddings(len(tokenizer)) 
     model.to(device)
-    print("Model is using device:", next(model.parameters()).device)
 
     # Initialize the trainer
     trainer = EmoteTrainer(model, train_loader, val_loader, test_loader, device, new_emote_config=new_emote_config, tokenizer=tokenizer)
