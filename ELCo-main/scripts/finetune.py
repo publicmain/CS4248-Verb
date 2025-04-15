@@ -11,11 +11,8 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 from torch.nn import BCEWithLogitsLoss
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from transformers import AdamW
+from torch.optim import AdamW
 from emote_config import Emote_Config
-
-# ★ 新增：导入 tqdm
-from tqdm import tqdm
 
 
 class EmoteTrainer:
@@ -74,7 +71,7 @@ class EmoteTrainer:
                         f.write('{},{}\n'.format(key, small_dict[key]))
 
             # if epoch is 0, then save the model
-            if epoch == 0 and self.portion == 1:  # we now only save fully trained models
+            if epoch == 0 and self.portion == 1: ## we now only save fully trained models
                 model_to_save = self.model.module if hasattr(self.model, 'module') else self.model
                 model_to_save.save_pretrained("{}/seed_{}_epoch_{}.pt".format(self.new_emote_config.model_save_dir, self.seed, epoch))
                 self.tokenizer.save_pretrained("{}/seed_{}_epoch_{}.pt".format(self.new_emote_config.model_save_dir, self.seed, epoch))
@@ -87,7 +84,10 @@ class EmoteTrainer:
 
         # Print the epoch with the best validation loss
         print(f'Best Epoch: {self.best_epoch}')
+
+        # Print the best val accuracy and its epoch number
         print(f'Best Val Accuracy: {self.best_val_acc} at Epoch {self.best_epoch}')
+        # Write it into fp_txt
         with open(self.fp_txt, 'a') as f:
             f.write(f'Best Val Accuracy: {self.best_val_acc} at Epoch {self.best_epoch}\n')
 
@@ -106,8 +106,7 @@ class EmoteTrainer:
         strategies_correct = [0]*7
         strategies_total = [0]*7
 
-        # ★ 在这里用 tqdm 包裹 loader
-        for batch in tqdm(loader, desc=f"{str_} Epoch {epoch+1}"):
+        for batch in loader:
             # Separate strategies from the rest of the batch data
             strategies = batch.pop('strategies').to(self.device)
 
@@ -116,10 +115,7 @@ class EmoteTrainer:
 
             with torch.set_grad_enabled(train):
                 outputs = self.model(**batch)
-                loss = self.loss_fn(
-                    outputs.logits,
-                    torch.nn.functional.one_hot(batch['labels'].long(), num_classes=2).float()
-                )
+                loss = self.loss_fn(outputs.logits, torch.nn.functional.one_hot(batch['labels'].long(), num_classes=2).float())
 
                 if train:
                     self.optimizer.zero_grad()
@@ -146,6 +142,7 @@ class EmoteTrainer:
 
         if str_ in ['Valid', 'Test']:
             with open(self.fp_txt, 'a') as f:
+                # Write epoch number and str_ into fp_txt
                 f.write('Epoch: {}, {}\n'.format(epoch+1, str_))
                 f.write(classification_report(true_labels, predictions, zero_division=1, digits=4))
                 f.write('\n')
@@ -155,26 +152,29 @@ class EmoteTrainer:
                 f.write('\n*** start *** {}\n'.format(epoch+1))
                 f.write('Epoch: {}\n'.format(epoch+1))
                 f.write('{}\n'.format(str_))
+
                 f.write('{},{},{},{}\n'.format('idx', 'pred', 'true', 'strategy'))
                 for idx in range(len(predictions)):
                     f.write('{},{},{},{}\n'.format(idx, predictions[idx], true_labels[idx], strategy_types[idx]))
             print('write predictions into {}'.format(self.fp_csv))
 
-        # 计算整体准确率
-        overall_accuracy = round(
-            np.sum(np.array(predictions) == np.array(true_labels)) / len(true_labels) * 100, 1
-        )
+        # Get accuracy score overall
+        overall_accuracy = round(np.sum(np.array(predictions) == np.array(true_labels)) / len(true_labels)  * 100, 1)
         if str_ in ['Valid', 'Test']:
             with open(self.fp_txt, 'a') as f:
                 f.write(f'{str_} accuracy: {overall_accuracy}\n\n')
+                # Then write header 'strategy, accuracy, correct count / total number' into fp_txt
                 f.write('{}, {}, {}\n'.format('strategy', 'accuracy', 'correct count / total number'))
 
         strategy_acc = []
+        # Finally, after the loop, print the accuracies for each strategy:
         for i in range(len(self.strategy_map)):
             if strategies_total[i] != 0:
+                # print accuracy for strategy i, with its correct count and totol number of the strategy
                 accuracy = round(strategies_correct[i]/strategies_total[i] * 100, 1)
                 strategy_acc.append(accuracy)
                 print(f'Strategy {i} {self.strategy_map_inverted[i]} accuracy: {accuracy}, {strategies_correct[i]} / {strategies_total[i]}')
+                # If str_ is in ['Valid', 'Test'], then write the accuracy for strategy i into fp_txt
                 if str_ in ['Valid', 'Test']:
                     with open(self.fp_txt, 'a') as f:
                         f.write(f'{i}, {accuracy}, {strategies_correct[i]} / {strategies_total[i]}\n')
